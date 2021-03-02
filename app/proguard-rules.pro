@@ -19,3 +19,14 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+#非Activity和Fragment的类，使用AopPermission需要保持
+-keep class com.leimans.lib.permission.PermissionTest
+
+
+-keep public class com.leimans.permission.bean.**{*;}
+-keep class androidx.core.app.ActivityCompat{*;}
+-keepclassmembers class * {
+    @com.leimans.permission.annotation.AopPermission <methods>;
+}
+-keepattributes *Annotation*

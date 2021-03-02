@@ -20,6 +20,7 @@ import com.leimans.permission.bean.AopPermissionResult;
 import com.leimans.permission.callback.PermissionRequestCallback;
 import com.leimans.permission.fragment.AopPermissionFragment;
 import com.leimans.permission.fragment.AopPermissionSupportFragment;
+import com.leimans.permission.util.AopPermissionUtil;
 
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
@@ -50,12 +51,20 @@ public class AopPermissionAspect {
     public void check(final ProceedingJoinPoint point) {
         MethodSignature signature = (MethodSignature) point.getSignature();
         final Object[] args = point.getArgs();
-        final Activity activity = getTopActivity(point);
+//        for (int i=0; i<args.length;i++){
+//            Log.e("test123", "args="+args[i]);
+//        }
+//        Log.e("test123", "point.getThis().getClass().getName()="+point.getThis().getClass().getName());
+//        Log.e("test123", "signature.getMethod()="+signature.getMethod());
+//        Log.e("test123", "signature.getReturnType()="+signature.getReturnType());
+        final Activity activity = AopPermissionUtil.getInstance().getTopActivity();
         if (activity == null) {
             return;
         }
+
         AopPermission annotation = signature.getMethod().getAnnotation(AopPermission.class);
         final String[] permissions = annotation.value();
+
         if (permissions == null || permissions.length == 0) {
             proceed(args, point, new String[]{}, new String[]{}, new String[]{});
             return;
@@ -169,7 +178,7 @@ public class AopPermissionAspect {
                 if (allGranted) {
                     point.proceed(args);
                 } else {
-                    Activity topActivity = getTopActivity(point);
+                    final Activity topActivity = AopPermissionUtil.getInstance().getTopActivity();
                     if (topActivity != null) {
                         Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
                         intent.setData(Uri.parse("package:" + topActivity.getPackageName()));
