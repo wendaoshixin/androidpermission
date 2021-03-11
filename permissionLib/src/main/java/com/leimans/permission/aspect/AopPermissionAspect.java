@@ -1,6 +1,10 @@
 package com.leimans.permission.aspect;
 
+import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.app.Dialog;
+import android.content.Context;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.net.Uri;
@@ -10,13 +14,18 @@ import android.text.TextUtils;
 import android.util.Log;
 
 import androidx.annotation.RequiresApi;
+import androidx.appcompat.app.AlertDialog;
 import androidx.core.content.ContextCompat;
 import androidx.fragment.app.Fragment;
 import androidx.fragment.app.FragmentActivity;
 import androidx.fragment.app.FragmentManager;
 
 import com.leimans.permission.annotation.AopPermission;
+import com.leimans.permission.bean.AopDialogImpl;
+import com.leimans.permission.bean.AopDialogListener;
 import com.leimans.permission.bean.AopPermissionResult;
+import com.leimans.permission.bean.DialogParams;
+import com.leimans.permission.bean.DialogConfig;
 import com.leimans.permission.callback.PermissionRequestCallback;
 import com.leimans.permission.fragment.AopPermissionFragment;
 import com.leimans.permission.fragment.AopPermissionSupportFragment;
@@ -84,11 +93,79 @@ public class AopPermissionAspect {
             proceed(args, point, new String[]{}, new String[]{}, permissions);
             return;
         }
-        if (activity instanceof FragmentActivity) {
-            supportPermissions(activity, args, point, deniedPermissions, permissions);
-        } else {
-            permissions(activity, args, point, deniedPermissions, permissions);
+        DialogConfig dialogRequest = null;
+        DialogParams dialogParams = null;
+        if (args != null && args.length != 0) {
+            for (Object arg : args) {
+                if (arg instanceof DialogConfig) {
+                    dialogRequest = (DialogConfig) arg;
+                }
+                if (arg instanceof DialogParams) {
+                    dialogParams = (DialogParams) arg;
+                }
+            }
         }
+        Dialog dialog = dialogRequest == null?null:dialogRequest.getDialog();
+        if (dialog != null) {
+            if (dialog instanceof AopDialogImpl) {
+                ((AopDialogImpl) dialog).setDialogListener(new AopDialogListener() {
+                    @SuppressLint("NewApi")
+                    @Override
+                    public void sure() {
+                        if (activity instanceof FragmentActivity) {
+                            supportPermissions(activity, args, point, deniedPermissions, permissions);
+                        } else {
+                            permissions(activity, args, point, deniedPermissions, permissions);
+                        }
+                    }
+
+                    @Override
+                    public void cancel() {
+
+                    }
+                });
+                dialog.show();
+            } else {
+                throw new IllegalArgumentException("Dialog必须实现AopDialogImpl");
+            }
+        }else if(dialogParams != null){
+            Dialog dialog1 = createDialog(activity,dialogParams,new DialogInterface.OnClickListener() {
+                @SuppressLint("NewApi")
+                @Override
+                public void onClick(DialogInterface dialog, int which) {
+                    if(which == DialogInterface.BUTTON_POSITIVE){
+                        if (activity instanceof FragmentActivity) {
+                            supportPermissions(activity, args, point, deniedPermissions, permissions);
+                        } else {
+                            permissions(activity, args, point, deniedPermissions, permissions);
+                        }
+                    }
+                }
+            });
+            dialog1.show();
+        }else{
+            if (activity instanceof FragmentActivity) {
+                supportPermissions(activity, args, point, deniedPermissions, permissions);
+            } else {
+                permissions(activity, args, point, deniedPermissions, permissions);
+            }
+        }
+    }
+
+    private Dialog createDialog(Context context, DialogParams dialogParams,DialogInterface.OnClickListener listener){
+        AlertDialog.Builder builder;
+        if (dialogParams.getTheme() > 0) {
+            builder = new AlertDialog.Builder(context, dialogParams.getTheme());
+        } else {
+            builder = new AlertDialog.Builder(context);
+        }
+
+        return builder
+                .setCancelable(false)
+                .setPositiveButton(dialogParams.getSureTip(), listener)
+                .setNegativeButton(dialogParams.getCancelTip(), listener)
+                .setMessage(dialogParams.getTip())
+                .create();
     }
 
 
@@ -156,16 +233,20 @@ public class AopPermissionAspect {
 
     public void proceed(Object[] args, ProceedingJoinPoint point,
                         String[] deniedPermissions, String[] dontAskAgainPermissions, String[] grantedPermissions) {
-        try {
-            AopPermissionResult aopPermissionResult = null;
-            if (args != null && args.length != 0) {
-                for (Object arg : args) {
-                    if (arg instanceof AopPermissionResult) {
-                        aopPermissionResult = (AopPermissionResult) arg;
-                        break;
-                    }
+        AopPermissionResult aopPermissionResult = null;
+        if (args != null && args.length != 0) {
+            for (Object arg : args) {
+                if (arg instanceof AopPermissionResult) {
+                    aopPermissionResult = (AopPermissionResult) arg;
+                    break;
+                }
+                if(arg instanceof DialogConfig){
+
                 }
             }
+        }
+
+        try {
             boolean allGranted = deniedPermissions.length == 0 && dontAskAgainPermissions.length == 0;//是否全部允许
             if (aopPermissionResult != null) {
                 aopPermissionResult.setAllGranted(allGranted);
@@ -178,16 +259,42 @@ public class AopPermissionAspect {
                 if (allGranted) {
                     point.proceed(args);
                 } else {
-                    final Activity topActivity = AopPermissionUtil.getInstance().getTopActivity();
-                    if (topActivity != null) {
-                        Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
-                        intent.setData(Uri.parse("package:" + topActivity.getPackageName()));
-                        topActivity.startActivity(intent);
-                    }
+                    gotoSystemPermission();
+//                    if (finalDialogRequest.getDeniedDialog() == null) {
+//
+//                    } else {
+//                        Dialog deniedDialog = finalDialogRequest.getDeniedDialog();
+//                        if (deniedDialog instanceof AopDialogImpl) {
+//                            ((AopDialogImpl) deniedDialog).setDialogListener(new AopDialogListener() {
+//                                @Override
+//                                public void sure() {
+//                                    gotoSystemPermission();
+//                                }
+//
+//                                @Override
+//                                public void cancel() {
+//
+//                                }
+//                            });
+//                        }else{
+//                            throw new IllegalArgumentException("Dialog必须实现AopDialogImpl");
+//                        }
+//                    }
+
                 }
             }
         } catch (Throwable throwable) {
             throw new RuntimeException(throwable);
+        }
+
+    }
+
+    private void gotoSystemPermission(){
+        final Activity topActivity = AopPermissionUtil.getInstance().getTopActivity();
+        if (topActivity != null) {
+            Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+            intent.setData(Uri.parse("package:" + topActivity.getPackageName()));
+            topActivity.startActivity(intent);
         }
     }
 
